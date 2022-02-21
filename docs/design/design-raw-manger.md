@@ -100,10 +100,7 @@ status:
 
 #### node : logicVolumeController,podController,csiNodeGrpc
 
-> carina-node则负责监听LogicVolume的创建事件，给LogicVolume绑定设备组和设备id,更新状态。
-
+- carina-node则负责监听LogicVolume的创建事件，获取lv类型，给LogicVolume绑定驱动设备组和设备id,更新状态。
+- 给pods 配置 cgroup  blkio,限制进程读写的 IOPS 和吞吐量
 - node-driver-registra 调用接口获取CSI插件信息，并向kubelet进行注册
-
 - Volume Manager（Kubelet 组件）观察到有新的使用 CSI 类型 PV 的 Pod 调度到本节点上，于是调用内部 in-tree CSI 插件函数调用外部插件接口NodePublishVolume，NodeUnpublishVolume
-
-，
