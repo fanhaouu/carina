@@ -104,3 +104,6 @@ status:
 - 给pods 配置 cgroup  blkio,限制进程读写的 IOPS 和吞吐量
 - node-driver-registra 调用接口获取CSI插件信息，并向kubelet进行注册
 - Volume Manager（Kubelet 组件）观察到有新的使用 CSI 类型 PV 的 Pod 调度到本节点上，于是调用内部 in-tree CSI 插件函数调用外部插件接口NodePublishVolume，NodeUnpublishVolume
+- 启动磁盘检查是否有新盘加入
+- 一致性检查，清理孤儿卷, 每十分钟会遍历本地volume，然后检查k8s中是否有对应的logicvolume，若是没有则删除本地volume（remove lv）;每十分钟会遍历k8s中logicvolume，然后检查logicvolume是否有对应的pv，若是没有则删除logicvolume
+- 设备注册

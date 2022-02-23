@@ -13,6 +13,7 @@ kubeadmConfigPatches:
   imageRepository: registry.aliyuncs.com/google_containers
   nodeRegistration:
     kubeletExtraArgs:
+      node-labels: "ingress-ready=true"
       pod-infra-container-image: registry.aliyuncs.com/google_containers/pause:3.1
 - |
   apiVersion: kubeadm.k8s.io/v1beta2

@@ -23,7 +23,7 @@ velero version
 
 ## 2 安装minio 
 - 编辑00-minio-deployment.yaml 
-cat 
+cat > 00-minio-deployment.yaml  << EOF 
 ```
 apiVersion: v1 
 kind: Namespace 
@@ -124,7 +124,7 @@ spec:
           mountPath: "/config" 
 ```
 ```
-kubectl apply -f examples/minio/00-minio-deployment.yaml 
+kubectl apply -f ./00-minio-deployment.yaml 
 ubuntu@LAPTOP-4FT6HT3J:~/www/src/github.com/carina-io/velero$ kubectl get pods -n velero 
 NAME                     READY   STATUS              RESTARTS   AGE
 minio-58dc5cf789-z2777   0/1     ContainerCreating   0          14s
@@ -135,33 +135,23 @@ minio   NodePort   10.96.13.35   <none>        9000:30693/TCP,9001:32351/TCP   1
 ```
 - 创建minio凭证 
 ```
-vi examples/minio/credentials-velero
+vi credentials-velero
 ```
 ```
-[default]
-aws_access_key_id = minio
-aws_secret_access_key = minio123
+i
 ```
 
 ## 安装velero服务端 ，使用s3 作为存储
-```
-velero install \
-   --provider aws \
-   --bucket velero \
-   --secret-file examples/minio/credentials-velero \
-   --use-volume-snapshots=false \
-   --plugins velero/velero-plugin-for-aws:v1.0.0 \
-   --backup-location-config region=minio,s3ForcePathStyle="true",s3Url=http://minio:9000
-```
+
 - 使用官方提供的restic组件备份pv
 ```
 velero install    \
-  --image velero/velero:v1.5.3  \
+  --image velero/velero:v1.6.3  \
 	 --plugins velero/velero-plugin-for-aws:v1.0.0  \
 	 --provider aws   \
 	 --bucket velero   \
 	 --namespace velero  \
-	 --secret-file examples/minio/credentials-velero   \
+	 --secret-file ./credentials-velero   \
 	 --velero-pod-cpu-request 200m   \
 	 --velero-pod-mem-request 200Mi   \
 	 --velero-pod-cpu-limit 1000m  \
@@ -195,15 +185,6 @@ velero install    \
  velero backup-location get 
 ```
 
-### velero 支持的后端存储,备份存储位置和卷快照位置
-
-#### Velero 支持两种关于后端存储的 CRD，分别是
-
-- BackupStorageLocation（对象数据）,主要支持的后端存储是 S3 兼容的存储，比如：Mino 和阿里云 OSS 等 ;
-- VolumeSnapshotLocation（pv 数据）,主要用来给 PV 做快照，需要云提供商提供插件。这个需要使用 CSI 等存储机制。你也可以使用专门的备份工具 Restic
-
-> 注意：Restic 是一款 GO 语言开发的数据加密备份工具，顾名思义，可以将本地数据加密后传输到指定的仓库。支持的仓库有 Local、SFTP、Aws S3、Minio、OpenStack Swift、Backblaze B2、Azure BS、Google Cloud storage、Rest Server。
-项目地址：https://github.com/restic/restic
 
 #### 使用 Minio
 
@@ -222,10 +203,6 @@ spec:
   config:	
     region: us-west-2		
     profile: "default"	
-    # 使用 Minio 的时候加上，默认为 false	
-    # AWS 的 S3 可以支持两种 Url Bucket URL	
-    # 1 Path style URL：http://s3endpoint/BUCKET	
-    # 2 Virtual-hosted style URL：http://oss-cn-beijing.s3endpoint 将 Bucker Name 放到了 Host Header中	
     s3ForcePathStyle: "false"	
     s3Url: http://minio:9000
 
@@ -295,11 +272,6 @@ kubectl patch backupstoragelocation default --namespace velero \
 
 
 
-> Velero对每个提供商仅支持一组凭据，如果后端存储使用同一提供者，则不可能在不同的位置使用不同的凭据；
-卷快照仍然受提供商允许您创建快照的位置的限制，不支持跨公有云供应商备份带有卷的集群数据。例如，AWS和Azure不允许您在卷所在的区域中不同的可用区创建卷快照，如果您尝试使用卷快照位置（与集群卷所在的区域不同）来进行Velero备份，则备份将失败。
-每个Velero备份都只能有一个BackupStorageLocation，VolumeSnapshotLocation，不可能（到目前为止）将单个Velero备份同时发送到多个备份存储位置，或者将单个卷快照同时发送到多个位置。但是，如果跨位置的备份冗余很重要，则始终可以设置多个计划的备份，这些备份仅在所使用的存储位置有所不同。
-不支持跨提供商快照，如果您的集群具有多种类型的卷，例如EBS和Portworx，但VolumeSnapshotLocation仅配置了EBS，则Velero将仅对EBS卷进行快照。
-恢复数据存储在主Velero存储桶的prefix/subdirectory下，并在备份创建时将BackupStorageLocationc存储到与用户选择的存储桶相对应的存储桶。
 
 
 
