@@ -12,56 +12,18 @@
 
 #### 实现细节
 
-- 创建pvc后，控制服务接收创建volume请求，并创建CRD
+- 用户请求的PV大小为S,carina优先找出所有空闲磁盘（已经有分区）并选择最低满足空间大于S磁盘；如果所有非空磁盘都不适用，则选择最小的磁盘要求其容量大于S，如果选择了相同大小的多个磁盘，则随机选择一个。
 
-  ```
-  +------------+         +--------------------+         +---------------------+
-  | PVC Create |-------->|  Controller Server |-------->| Create CRD Resource |
-  +------------+         +--------------------+         +---------------------+  
-  ```
+- 如果从上述过程中选择了一个磁盘，则carina将创建一个分区作为PV的真实数据后端。否则，PV绑定将失败。
 
-- 节点服务运行架构图
+- 用户可以在PVC中指定注释 `carina.io/exclusivly-disk-claim: true`以声明物理磁盘独家使用。如果已设置此注释且其值为true，然后carina将尝试绑定一个空磁盘（最低要求）作为其数据后端。
 
-  - 磁盘管理模块提供裸盘操作接口，独占裸盘类型的 PV 不支持 PV 扩容、PV 快照等操作。
+#### 实现逻辑
+- 创建分区 
+- 扩容分区
+- 删除分区
 
-  - 定时协程，定时扫描本次磁盘与配置对比，完成磁盘初始化以及与device-plugins配额校准
-
-  - CRD调谐程序负责根据创建LogicVolume事件
-
-  - Kubelet调用Node grpc服务，完成volume卷操作
-
-#### 实现细节
-
-- rawDeviceCSIDriver-> CSIDriver
-- rawDeviceProvisioner->Deploy
-- rawDevicePlugin->Demonset
-
-#### storageClass 新增加参数volumeType
-
-  ```yaml
-  apiVersion: storage.k8s.io/v1
-  kind: StorageClass
-  metadata:
-    name: csi-carina-sc
-  provisioner: carina.storage.io # 这是该CSI驱动的名称，不允许更改
-  parameters:
-    # 这是kubernetes内置参数，我们支持xfs,ext4两种文件格式，如果不填则默认ext4
-    csi.storage.k8s.io/fstype: xfs
-    # 这是选择磁盘分组，该项目会自动将SSD及HDD磁盘分组
-    # SSD：ssd HDD: hdd
-    # 如果不填会随机选择磁盘类型
-    carina.storage.io/disk-type: hdd
-    carina.storage.io/volume-type: raw  # lvm || raw ,默认lvm
-  reclaimPolicy: Delete
-  allowVolumeExpansion: true # 支持扩容，定为true便可
-  # WaitForFirstConsumer表示被容器绑定调度后再创建pv
-  volumeBindingMode: WaitForFirstConsumer
-  # 支持挂载参数设置，默认为空
-  # 如果没有特殊的需求，为空便可满足大部分要求
-  mountOptions:
-    - rw
-  ```
-
+### 流程细节
 #### controller : nodeController,pvcController,webhook,csiControllerGrpc
 
 - 监听 ConfigMap是否变化,lvm是一个vg对应注册一个设备(carina-vg-XXX.sock)，裸设备则是一个裸盘或者分区对应一个注册设备(carina-raw-XXX.sock)；通过切割注册设备，判断注册设备的健康状态来检测使用量。
@@ -107,3 +69,11 @@ status:
 - 启动磁盘检查是否有新盘加入
 - 一致性检查，清理孤儿卷, 每十分钟会遍历本地volume，然后检查k8s中是否有对应的logicvolume，若是没有则删除本地volume（remove lv）;每十分钟会遍历k8s中logicvolume，然后检查logicvolume是否有对应的pv，若是没有则删除logicvolume
 - 设备注册
+
+
+### 问题： 
+
+- 创建分区是二进制linux交互命令，程序中如何执行传入参数
+- pod可以共享裸盘意味着裸盘对应有多个分区，但实际行裸盘最多只有4分主分区，一个扩展分区，多个逻辑分区，那么在执行中是创建的什么类型分区
+- 分区扩容，裸盘已经创建了大于两个的问题，并且是连续的空间，那么扩容第一个分区的时候意味着没有可扩容的空间了。
+- lv 删除意味着不保留数据，是不是要清除已经创建的分区和数据

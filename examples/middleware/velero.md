@@ -375,7 +375,7 @@ mysql> show databases;
 5 rows in set (0.00 sec)
 ```
 
-## 可以看到恢复结果符合预期，valero创建备份默认保留一个月。也可以创建周期性备份应用
+## 可以看到恢复结果符合预期，velero创建备份默认保留一个月。也可以创建周期性备份应用
 
 velero schedule create pvc-backup-2 --schedule "0 1 * * *" --snapshot-volumes --include-namespaces carina  --selector app=mysql --default-volumes-to-restic 
 ```
