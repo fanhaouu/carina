@@ -18,7 +18,7 @@ data:
         {
           "name": "carina-vg-hdd",
           "re": ["loop3+"],
-          "policy": "LVM",
+          "policy": "RAW",
           "nodeLabel": "kubernetes.io/hostname"
         }
       ],
