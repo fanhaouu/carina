@@ -7,111 +7,128 @@
 
 ### 功能设计
 
-- 通过配置文件获取扫描时间间隔和磁盘的匹配条件，发现磁盘新增或者删除
-- 新增的磁盘当作一个设备注册到kubelet
-- 新增磁盘分区作为pv数据存储
+- 通过配置文件获取扫描时间间隔和磁盘的匹配条件,检查磁盘是否为裸盘，如果发现有匹配多块裸盘按磁盘顺序取第一块。
+- 裸盘会作为设备注册到节点。
+- 裸盘按storageclass 参数配置可以分为独占式和共享式。独占式支持扩容，共享式不支持扩容。
 
 ### 实现细节
+- 裸盘磁盘匹配规则
+```
+config.json: |-
+    {
+      "diskSelector": [
+        {
+          "name": "carina-raw-ssd" ,
+          "re": ["loop3"], 
+          "policy": "RAW",
+          "nodeLabel": "kubernetes.io/hostname"
+        },
+        {
+          "name": "carina-raw-hdd",
+          "re": ["loop*+"],#当前匹配多块，按顺序取取第一块盘
+          "policy": "RAW",
+          "nodeLabel": "kubernetes.io/hostname"
+        }
+      ],
+      "diskScanInterval": "300",
+      "schedulerStrategy": "spreadout"
+    }
+```
+- storageClass新增加参数配置"carina.io/exclusivly-disk-claim",true是指pod独占磁盘,false是多个pod共享磁盘；
+```yaml
+  apiVersion: storage.k8s.io/v1
+  kind: StorageClass
+  metadata:
+    name: csi-carina-sc
+  provisioner: carina.storage.io # 这是该CSI驱动的名称，不允许更改
+  parameters:
+    # 这是kubernetes内置参数，我们支持xfs,ext4两种文件格式，如果不填则默认ext4
+    csi.storage.k8s.io/fstype: xfs
+    carina.storage.io/disk-type: carina-raw-ssd 
+    carina.io/exclusivly-disk-claim: false  # 新增加参数是否是独占式，默认fasle
+  reclaimPolicy: Delete
+  allowVolumeExpansion: true # 支持扩容，定为true便可
+  # WaitForFirstConsumer表示被容器绑定调度后再创建pv
+  volumeBindingMode: WaitForFirstConsumer
+  # 支持挂载参数设置，默认为空
+  # 如果没有特殊的需求，为空便可满足大部分要求
+  mountOptions:
+    - rw
+  ```
 
-- 用户请求的PV大小为S,carina优先找出所有空闲磁盘（已经有分区）并选择最低满足空间大于S磁盘；如果所有非空磁盘都不适用，则选择最小的磁盘要求其容量大于S，如果选择了相同大小的多个磁盘，则随机选择一个。
-- 如果从上述过程中选择了一个磁盘，根据storageClass参数匹配是创建MBR,GPT，则carina将创建一个分区作为PV的真实数据后端。否则，PV绑定将失败。
-- 用户可以在PVC中指定注释 `carina.io/exclusivly-disk-claim: true`以声明物理磁盘独家使用。如果已设置此注释且其值为true，然后carina将尝试绑定一个空磁盘（最低要求）作为其数据后端。
+- 调度策略不变。binpack：选择恰好满足pvc容量的节点；spreadout：选择剩余容量最大的节点，这个是默认调度策略
+
+```
+   config.json: |-
+      {
+        "schedulerStrategy": "spreadout" # binpack，spreadout支持这两个参数
+      }
+```
+- 磁盘模型划分如下
+
+  ```
+  独占式磁盘
+  +-------------------------+                
+  |主分区(pvc容量)           |
+  |主分区(磁盘剩余容量)       |
+  +-------------------------+  
+  
+  共享式磁盘
+  +-------------------------+                
+  |主分区(pvc1容量)          |
+  |主分区(磁盘剩余容量)           |
+  |主分区(pvc2容量)          |
+  |主分区(pvcn容量)          |
+  |主分区(磁盘剩余容量)       |
+  +-------------------------+                
+  ```
+
 
 ### 实现逻辑
-#### 创建分区 
+#### 1. 管理分区容量
+每个节点定时磁盘检查新增裸盘注册设备和查询和记录裸盘空闲空间片段位置信息到configmap里
+```
+df -h  /dev/loop2p1
+```
+#### 2. 裸盘调度策略
+  - 选着所有节点上裸盘剩余可用，选着裸盘上剩余可用分区位置
+  - binpack：选择恰好满足pvc容量的节点，和 剩余可用分区片段恰好满足
+  - spreadout：选择剩余容量最大的节点和选择剩余容量最大的分区片段，这个是默认调度策略
+#### 3. 创建分区
+ >默认创建GPT分区 ，检测裸盘已有分区。查看可分配空间节点位置，采用最佳适应算法（Best Fit），分区删除和增加必然造成很多不连续的空余空间。这就要求将所有的空闲区按容量递增顺序排成一个空白链。这样每次找到的第一个满足要求的空闲区，必然是最优的
 
-- ① 根据参数设置分区类型MBR,GPT创建
-- ②如果是MBR,最多支持4个主分区，我们创建的分区是逻辑分区,单个磁盘最多支持11个逻辑分区
+使用脚本创建或者分区命令创建，
 ```
-fdisk /dev/sdd
-p
-n
-e 扩展分区
-2048
-102048
-63
-n
-l 逻辑分区
-102049
-$pv容量
-63
-wq
-```
-- ②如果是GPT。检测裸盘已有分区。分配新的分区号创建分区
-```
-sgdisk -p /dev/sdd   # 查看所有GPT分区
-sgdisk -n n:0:+1M -c n:"carina $namespace.svc.pod.name" -t n:8300 /dev/sdd  # 创建分区
-sgdisk -z  /dev/sdd1  # 清除分区数据
-sgdisk -i n /dev/sdd #  查看分区详情
-sgdisk -d n /dev/sdd  # 删除第n个分区
-```
-partprobe
-fdisk -lu /dev/sdd
-#为分区创建文件系统
-mkfs -t ext4 /dev/sdd1
-mkfs -t xfs /dev/sdd1
-#配置/etc/fstab文件并挂载分区
-echo `blkid /dev/sdd1 | awk '{print $2}' | sed 's/\"//g'` /mnt ext4 defaults 0 0 >> /etc/fsta
-df -h
-```
-#### 扩容分区
+./parted.sh /dev/loop2 ext4 1000 1100  myloop1
 
+# parted /dev/loop2 mklable gpt #设置分区格式
+# parted /dev/loop2 mkpart myloop1 0 10G
+# parted /dev/loop2 mkpart myloop2 10G 20G 
+# parted /dev/loop2 mkpart myloop3 20G -0G
+# parted /dev/loop2 p
+parted /dev/loop2 p free
+# blkid |grep myloop3  # 查看分区num,label uuid 
+
+partprobe    #同步磁盘分区表                
+fdisk -lu /dev/loop2
+```
+#### 4. 扩容分区
 - ① storage配置参数注解pod独占整块磁盘可以扩容
 - ② 多个pods共享磁盘不支持扩容
-- ③ 扩展已有MBR分区
+- ③ 扩展已有GPT分区
 ```
-fdisk -lu /dev/vdb # 记录旧分区的起始和结束的扇区位置和分区表格式。
+parted /dev/loop2 resizepart 1（分区号）  600（end位置）
+parted /dev/loop2 p
 ```
-查看数据盘的挂载路径
-blkid /dev/vdb1 查看文件系统类型
-```
-mount | grep "/dev/vdb"
-```
-取消挂载（umount）数据盘。
-```
-umount /dev/vdb1
-```
-使用fdisk工具删除旧分区。
-使用fdisk命令新建分区。
 
-运行以下命令再次检查文件系统，确认扩容分区后的文件系统状态为clean。
-```
-e2fsck -f /dev/vdb1
-resize2fs /dev/vdb1  #ext*文件系统
-mount  # 重新挂载
-xfs_growfs #xfs文件系统先挂载后扩容
-```
-③ 扩展已有GPT分区
-```
-执行先查询裸盘挂载位置后卸unmount
-<!--备份磁盘分区
-sgdisk -b=/tmp/$(dev/sdd).partitiontable /dev/sdd
-sgdisk -i n /dev/sdd #  查看分区详情
-sgdisk -d n /dev/sdd  # 删除第n个分区
-sgdisk -n n:0:+1M+(pvc容量) -c n:"carina $namespace.svc.pod.name" -t n:8300 /dev/sdd  
-#恢复数据
-sgdisk -R=/tmp/$(dev/sdd).partitiontable /dev/sddn -->
-parted  /dev/sdd
-接下来输入print来查看分区信息，记住已有分区的End值，以此值作为下一个分区的起始偏移值
-start offset
-mkpart primary offset+add end
-print
-quit
-
-
-运行以下命令再次检查文件系统，确认扩容分区后的文件系统状态为clean。
-e2fsck -f /dev/vdb1
-resize2fs /dev/vdb1  #ext*文件系统
-mount  # 重新挂载
-xfs_growfs #xfs文件系统先挂载后扩容
-```
 #### 删除分区
-
+```
 lv 和裸盘分区绑定，删除lv 就删除裸盘pod占用的分区
-sgdisk -d n /dev/sdd  # 删除第n个分区
+parted /dev/loop2 rm 
+parted /dev/loop2 p1
+```
 ### 流程细节
 #### controller : nodeController,pvcController,webhook,csiControllerGrpc
-
 - 监听 ConfigMap是否变化,lvm是一个vg对应注册一个设备(carina-vg-XXX.sock)，裸设备则是一个裸盘或者分区对应一个注册设备(carina-raw-XXX.sock)；通过切割注册设备，判断注册设备的健康状态来检测使用量。
 - PVC创建完成后,根据存储类型(此处为rbd)找到存储类StorageClass
 - external-provisioner，watch到指定StorageClass的 PersistentVolumeClaim资源状态变更，会自动地调用csiControllerGrpc这两个CreateVolume、DeleteVolume接口；等待返回成功则创建pv，卷控制器会将 PV 与 PVC 进行绑定。

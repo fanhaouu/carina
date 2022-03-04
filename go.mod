@@ -30,10 +30,19 @@ require (
 )
 
 require (
+	github.com/pierrec/lz4 v2.3.0+incompatible // indirect
+	github.com/pkg/xattr v0.4.1 // indirect
+	github.com/sirupsen/logrus v1.7.0 // indirect
+	github.com/ulikunitz/xz v0.5.6 // indirect
+	gopkg.in/djherbis/times.v1 v1.2.0 // indirect
+)
+
+require (
 	cloud.google.com/go v0.54.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.1.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/diskfs/go-diskfs v1.2.0 // indirect
 	github.com/evanphx/json-patch v4.9.0+incompatible // indirect
 	github.com/go-logr/logr v0.4.0 // indirect
 	github.com/go-logr/zapr v0.2.0 // indirect
@@ -85,6 +94,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776 // indirect
 	k8s.io/apiextensions-apiserver v0.20.1 // indirect
 	k8s.io/component-base v0.20.2 // indirect
+	k8s.io/klog v1.0.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20201113171705-d219536bb9fd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.0.2 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect

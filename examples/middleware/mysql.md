@@ -13,7 +13,7 @@
 - 在节点dev1-node-2.novalocal，dev1-node-3.novalocal执行如下方法创建`loop device` 
 
 ```shell
-for i in $(seq 1 5); do
+for i in $(seq 2 3); do
 truncate --size=200G /tmp/disk$i.device && \
 losetup -f /tmp/disk$i.device
 done
