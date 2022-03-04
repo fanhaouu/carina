@@ -1,0 +1,7 @@
+apiVersion: carina.storage.io/v1
+kind: NodeDevice
+metadata:
+  name: nodedevice-sample
+spec:
+  # Add fields here
+  foo: bar
