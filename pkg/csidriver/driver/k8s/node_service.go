@@ -190,18 +190,18 @@ func (s NodeService) SelectNodeDevice(ctx context.Context, requestGb int64, devi
 			continue
 		}
 		for key, value := range nodedevice.Status.Available {
-		if strings.Contains(key,"raw"){
+		if !strings.Contains(key,utils.DeviceRaw){
 			continue
 		}
-		strings.Split(key,"")	
+		strings.Split(key, "-")
 		avaiableRaw,_ := strconv.ParseInt(value, 10, 64)
 		if  avaiableRaw < requestGb{
 			continue
 		}
-	    raw := 
+	    
 		//检查磁盘分区是否可用
         for _, raw := range  nodedevice.Status.DeviceManage.RawDevices {
-			if raw.Name==
+		
 		}
 		}
 		

@@ -133,12 +133,8 @@ type NodeDeviceStatus struct {
 	// Important: Run "make" to regenerate code after modifying this file
 	NodeState State `json:"state"`
 	//total rawdeivce,lvmdeivce,raiddevice capacity
-	// DeviceRawSSD  = "carina-raw-ssd"
-	// DeviceRawHDD  = "carina-raw-hdd"
-	// DeviceRawLOOP = "carina-raw-loop"
-	// DeviceRawAny  = "carina-raw-Any"
-	// DeviceVGSSD = "carina-vg-ssd"
-	// DeviceVGHDD = "carina-vg-hdd"
+	// DeviceRaw+name  = "carina-raw"+mySSD
+	// DeviceLVM+name  = "carina-raw"+myVgName
 	//sample like this:
 	// map[string]string{
 	//     "carina-raw-ssd":  "100M",

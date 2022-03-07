@@ -82,8 +82,6 @@ const (
 
 	NodeDeviceFinalizer = "carina.storage.io/nodedevice"
 
-	DeviceRawSSD  = "carina-raw-ssd"
-	DeviceRawHDD  = "carina-raw-hdd"
-	DeviceRawLOOP = "carina-raw-loop"
-	DeviceRawAny  = "carina-raw-Any"
+	DeviceRaw = "carina-raw"
+	DeviceLVM = "carina-vg"
 )
