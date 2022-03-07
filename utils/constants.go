@@ -37,6 +37,9 @@ const (
 	// DeviceDiskKey is the key used in CSI volume create requests to specify a DeviceDiskKey support carina-vg-ssd carina-vg-hdd
 	DeviceDiskKey = "carina.storage.io/disk-type"
 
+	//ExclusivityDisk  true or false  is the key indicates that only the disk is used by one pod
+	ExclusivityDisk = "carina.storage.io/exclusivity-disk"
+
 	VolumeBackendDiskType = "carina.storage.io/backend-disk-type"
 	VolumeCacheDiskType   = "carina.storage.io/cache-disk-type"
 	// VolumeCacheDiskRatio value: 1-100 Cache Capacity Ratio
@@ -76,4 +79,11 @@ const (
 
 	// CarinaSchedule custom schedule
 	CarinaSchedule = "carina-scheduler"
+
+	NodeDeviceFinalizer = "carina.storage.io/nodedevice"
+
+	DeviceRawSSD  = "carina-raw-ssd"
+	DeviceRawHDD  = "carina-raw-hdd"
+	DeviceRawLOOP = "carina-raw-loop"
+	DeviceRawAny  = "carina-raw-Any"
 )

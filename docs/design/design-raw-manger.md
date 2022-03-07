@@ -7,11 +7,13 @@
 
 ### 功能设计
 
+- 控制节点创建CRD资源和负责维护crd节点状态，节点服务监听CRD资源创建，收到创建事件后维护本地磁盘状态
 - 通过配置文件获取扫描时间间隔和磁盘的匹配条件,检查磁盘是否为裸盘，如果发现有匹配多块裸盘按磁盘顺序取第一块。
 - 裸盘会作为设备注册到节点。
 - 裸盘按storageclass 参数配置可以分为独占式和共享式。独占式支持扩容，共享式不支持扩容。
 
 ### 实现细节
+- 控制器周期获取节点状态，来维护NodeDeive的状态
 - 裸盘磁盘匹配规则
 ```
 config.json: |-
@@ -45,7 +47,7 @@ config.json: |-
     # 这是kubernetes内置参数，我们支持xfs,ext4两种文件格式，如果不填则默认ext4
     csi.storage.k8s.io/fstype: xfs
     carina.storage.io/disk-type: carina-raw-ssd 
-    carina.io/exclusivly-disk-claim: false  # 新增加参数是否是独占式，默认fasle
+    carina.storage.io/exclusivity-disk: false  # 新增加参数是否是独占式，默认fasle
   reclaimPolicy: Delete
   allowVolumeExpansion: true # 支持扩容，定为true便可
   # WaitForFirstConsumer表示被容器绑定调度后再创建pv
@@ -86,7 +88,7 @@ config.json: |-
 
 ### 实现逻辑
 #### 1. 管理分区容量
-每个节点定时磁盘检查新增裸盘注册设备和查询和记录裸盘空闲空间片段位置信息到configmap里
+每个节点定时磁盘检查新增裸盘注册设备和查询和记录裸盘空闲空间片段位置信息到nodedevice里
 ```
 df -h  /dev/loop2p1
 ```

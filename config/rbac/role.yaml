@@ -77,10 +77,22 @@ rules:
   - patch
   - update
 - apiGroups:
-  - storage.k8s.io
+  - carina.storage.io
   resources:
-  - storageclasses
+  - nodedevices
   verbs:
+  - create
+  - delete
   - get
   - list
+  - patch
+  - update
   - watch
+- apiGroups:
+  - carina.storage.io
+  resources:
+  - nodedevices/status
+  verbs:
+  - get
+  - patch
+  - update

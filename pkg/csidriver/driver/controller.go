@@ -61,7 +61,8 @@ func (s controllerService) CreateVolume(ctx context.Context, req *csi.CreateVolu
 	name = strings.ToLower(name)
 
 	// 处理磁盘类型参数，支持carina.storage.io/disk-type:ssd书写方式
-    deviceGroup = version.GetDeviceGroup(deviceGroup)
+	deviceGroup = version.GetDeviceGroup(deviceGroup)
+
 	log.Info("CreateVolume called ",
 		" name ", req.GetName(),
 		" device_group ", deviceGroup,
@@ -114,7 +115,7 @@ func (s controllerService) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// process topology
+	// process
 	var node string
 	segments := map[string]string{}
 	requirements := req.GetAccessibilityRequirements()
@@ -153,6 +154,11 @@ func (s controllerService) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		// - https://github.com/container-storage-interface/spec/blob/release-1.1/spec.md#createvolume
 		// - https://github.com/kubernetes-csi/csi-test/blob/6738ab2206eac88874f0a3ede59b40f680f59f43/pkg/sanity/controller.go#L404-L428
 		log.Info("decide node because accessibility_requirements not found")
+		//检查磁盘类型是使用裸盘还是使用lvm
+		if version.CheckRawDeviceGroup(deviceGroup) {
+			exclusivityDisk := req.GetParameters()[utils.ExclusivityDisk]
+			nodeName, group, segmentsTmp, err := s.nodeService.SelectNodeDevice(ctx, requestGb, deviceGroup, requirements, exclusivityDisk)
+		}
 		nodeName, group, segmentsTmp, err := s.nodeService.SelectVolumeNode(ctx, requestGb, deviceGroup, requirements)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to get max capacity node %v", err)

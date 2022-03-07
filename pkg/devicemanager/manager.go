@@ -46,6 +46,8 @@ type DeviceManager struct {
 	Mutex *mutx.GlobalLocks
 	// 磁盘操作
 	DiskManager device.LocalDevice
+	// 分区操作
+	PartitionManager device.LocalPartition
 	// LVM 操作
 	LvmManager lvmd.Lvm2
 	// Volume 操作
@@ -65,10 +67,14 @@ func NewDeviceManager(nodeName string, cache cache.Cache, stopChan <-chan struct
 	executor := &exec.CommandExecutor{}
 	mutex := mutx.NewGlobalLocks()
 	dm := DeviceManager{
-		Cache:            cache,
-		Executor:         executor,
-		Mutex:            mutex,
-		DiskManager:      &device.LocalDeviceImplement{Executor: executor},
+		Cache:       cache,
+		Executor:    executor,
+		Mutex:       mutex,
+		DiskManager: &device.LocalDeviceImplement{Executor: executor},
+		PartitionManager: &device.LocalPartitionImplement{
+			LocalDeviceImplement: device.LocalDeviceImplement{Executor: executor},
+			Executor:             executor,
+		},
 		LvmManager:       &lvmd.Lvm2Implement{Executor: executor},
 		VolumeManager:    &volume.LocalVolumeImplement{Mutex: mutex, Lv: &lvmd.Lvm2Implement{Executor: executor}, Bcache: &bcache.BcacheImplement{Executor: executor}, NoticeServerMap: make(map[string]chan struct{})},
 		Bcache:           &bcache.BcacheImplement{Executor: executor},
@@ -77,7 +83,7 @@ func NewDeviceManager(nodeName string, cache cache.Cache, stopChan <-chan struct
 		trouble:          &troubleshoot.Trouble{},
 		configModifyChan: make(chan struct{}),
 	}
-	dm.trouble = troubleshoot.NewTroubleObject(dm.VolumeManager, cache, nodeName)
+	dm.trouble = troubleshoot.NewTroubleObject(dm.VolumeManager, dm.DiskManager, dm.PartitionManager, cache, nodeName)
 	// 注册监听配置变更
 	dm.configModifyChan = make(chan struct{}, 1)
 	configuration.RegisterListenerChan(dm.configModifyChan)
@@ -226,6 +232,131 @@ func (dm *DeviceManager) AddAndRemoveDevice() {
 	}
 }
 
+// AddAndRemoveDevice 定时巡检磁盘，是否有新磁盘加入适配裸盘
+func (dm *DeviceManager) AddAndRemoveDeviceModify() {
+	//total group  ,containal vgs raws
+	diskClass := dm.GetNodeVg()
+	//vg
+	ActuallyVg, err := dm.VolumeManager.GetCurrentVgStruct()
+	if err != nil {
+		log.Error("get current vg struct failed: " + err.Error())
+		return
+	}
+	changeBefore := ActuallyVg
+	log.Debug("ActuallyVg: ", ActuallyVg)
+	//找出符合条件的磁盘以及分区，当前不包括raw 匹配
+	newDisk, err := dm.DiscoverDisk(diskClass)
+	if err != nil {
+		log.Error("find new device failed: " + err.Error())
+		return
+	}
+	log.Debug("newDisk: ", newDisk)
+	//如果是虚拟检查没有被分配给vg物理卷，
+	//如果是直接使用裸盘，这里要添加检查裸盘是否符合匹配条件
+	newPv, err := dm.DiscoverPv(diskClass)
+	if err != nil {
+		log.Error("find new pv failed: " + err.Error())
+		return
+	}
+	log.Debug("newPv: ", newPv)
+
+	// 合并新增设备
+	for key, value := range newDisk {
+		if v, ok := newPv[key]; ok {
+			newDisk[key] = utils.SliceMergeSlice(value, v)
+		}
+	}
+	for key, value := range newPv {
+		if _, ok := newDisk[key]; !ok {
+			newDisk[key] = value
+		}
+	}
+	log.Debug("newDisk:", newDisk)
+	// 需要新增的磁盘, 处理成容易比较的数据
+	needAddPv := newDisk
+	ActuallyVgMap := map[string][]string{}
+	for _, v := range ActuallyVg {
+		for _, pv := range v.PVS {
+			ActuallyVgMap[v.VGName] = append(ActuallyVgMap[v.VGName], pv.PVName)
+		}
+	}
+	log.Debug("ActuallyVgMap ", ActuallyVgMap)
+	for vgName, pvs := range newDisk {
+		if actuallyPv, ok := ActuallyVgMap[vgName]; ok {
+			needAddPv[vgName] = utils.SliceSubSlice(pvs, actuallyPv)
+		}
+	}
+
+	// 执行新增磁盘
+	log.Debug("needAddPv ", needAddPv)
+	for vg, pvs := range needAddPv {
+		log.Infof("vg:%s ,pvs:%s ", vg, pvs)
+		for _, pv := range pvs {
+			//过滤已经在磁盘组的磁盘
+			if v, ok := ActuallyVgMap[vg]; ok && utils.ContainsString(v, pv) {
+				continue
+			}
+			if err := dm.VolumeManager.AddNewDiskToVg(pv, vg); err != nil {
+				log.Errorf("add new disk failed vg: %s, disk: %s, error: %v", vg, pv, err)
+			}
+			//同步磁盘分区表
+			if err := dm.LvmManager.PartProbe(); err != nil {
+				log.Errorf("failed partprobe  error: %v", err)
+			}
+		}
+	}
+
+	time.Sleep(5 * time.Second)
+	// 移出磁盘
+	// 无法判断单独的PV属于carina管理范围，所以不支持单独对pv remove
+	// 若是发生vgreduce成功，但是pvremove失败的情况，并不影响carina工作，也不影响磁盘再次使用
+	ActuallyVg, err = dm.VolumeManager.GetCurrentVgStruct()
+	if err != nil {
+		log.Error("get current vg struct failed: " + err.Error())
+		return
+	}
+
+	for _, v := range ActuallyVg {
+		if _, ok := diskClass[v.VGName]; !ok {
+			continue
+		}
+
+		diskSelector, err := regexp.Compile(strings.Join(diskClass[v.VGName].Re, "|"))
+		if err != nil {
+			log.Warnf("disk regex %s error %v ", strings.Join(diskClass[v.VGName].Re, "|"), err)
+			return
+		}
+		log.Debug("diskSelector  ", diskSelector)
+		for _, pv := range v.PVS {
+			if strings.Contains(pv.PVName, "unknown") {
+				_ = dm.LvmManager.RemoveUnknownDevice(pv.VGName)
+				continue
+			}
+			//同一个vg里，如果正则不匹配就将磁盘移出vg
+			if !diskSelector.MatchString(pv.PVName) {
+				log.Infof("remove pv %s in vg %s", pv.PVName, v.VGName)
+				if err := dm.VolumeManager.RemoveDiskInVg(pv.PVName, v.VGName); err != nil {
+					log.Errorf("remove pv %s error %v", pv.PVName, err)
+				}
+				if err := dm.LvmManager.PartProbe(); err != nil {
+					log.Errorf("failed partprobe  error: %v", err)
+				}
+			}
+
+		}
+	}
+
+	changeAfter, err := dm.VolumeManager.GetCurrentVgStruct()
+	if err != nil {
+		log.Error("get current vg struct failed: " + err.Error())
+		return
+	}
+	log.Debug("new vgs ", changeAfter)
+	if validateVg(changeBefore, changeAfter) {
+		dm.VolumeManager.NoticeUpdateCapacity([]string{})
+	}
+}
+
 // DiscoverDisk 查找是否有符合条件的块设备加入
 func (dm *DeviceManager) DiscoverDisk(diskClass map[string]configuration.DiskSelectorItem) (map[string][]string, error) {
 	blockClass := map[string][]string{}
@@ -267,7 +398,7 @@ func (dm *DeviceManager) DiscoverDisk(diskClass map[string]configuration.DiskSel
 			if _, ok := parentDisk[d.Name]; ok {
 				continue
 			}
-
+			//只读，小于10G,文件系统不为空，已经挂载
 			if d.Readonly || d.Size < 10<<30 || d.Filesystem != "" || d.MountPoint != "" {
 				log.Infof("mismatched disk: %s filesystem:%s mountpoint:%s readonly:%t, size:%d", d.Name, d.Filesystem, d.MountPoint, d.Readonly, d.Size)
 				continue
@@ -379,6 +510,7 @@ func (dm *DeviceManager) VolumeConsistencyCheck() {
 			case <-t.C:
 				log.Info("volume consistency check...")
 				dm.trouble.CleanupOrphanVolume()
+				dm.trouble.CleanupOrphanPartition()
 			case <-dm.stopChan:
 				log.Info("stop volume consistency check...")
 				return

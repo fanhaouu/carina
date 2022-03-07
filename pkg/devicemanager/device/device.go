@@ -33,6 +33,7 @@ type LocalDevice interface {
 	ListDevices() ([]string, error)
 	ListDevicesDetail(device string) ([]*types.LocalDisk, error)
 	GetDiskUsed(device string) (uint64, error)
+	GetDiskInfo(device string) (map[string]string, error)
 	//"bsd", "dvh", "gpt",  "loop","mac", "msdos", "pc98", or "sun"
 	GetDiskPartitionType(device string) (string, error)
 }
@@ -96,6 +97,32 @@ func (ld *LocalDeviceImplement) GetDiskUsed(device string) (uint64, error) {
 	var stat syscall.Statfs_t
 	syscall.Statfs(device, &stat)
 	return stat.Blocks - stat.Bavail, nil
+}
+
+//Filesystem      Size  Used Avail Use% Mounted on
+//none            3.9G     0  3.9G   0% /dev
+func (ld *LocalDeviceImplement) GetDiskInfo(device string) (map[string]string, error) {
+	var devicePath string
+	splitDevicePath := strings.Split(device, "/")
+	if len(splitDevicePath) == 1 {
+		devicePath = fmt.Sprintf("/dev/%s", device) //device path for OSD on devices.
+	} else {
+		devicePath = device //use the exact device path (like /mnt/<pvc-name>) in case of PVC block device
+	}
+	output, err := ld.Executor.ExecuteCommandWithOutput("df", "-h", fmt.Sprintf("/dev/%s", devicePath))
+	props := strings.Split(output, " ")
+	propMap := make(map[string]string, len(props))
+	if err != nil {
+		log.Error("exec df -h " + fmt.Sprintf("/dev/%s", device) + err.Error())
+		return propMap, err
+	}
+	for _, kvpRaw := range props {
+		kvp := strings.Split(kvpRaw, " ")
+		if len(kvp) == 2 {
+			propMap[kvp[0]] = strings.Replace(kvp[1], `"`, "", -1)
+		}
+	}
+	return propMap, nil
 }
 
 // GetDiskPartitionType look up parttion type GPT or MBR
@@ -165,12 +192,5 @@ func parseDiskString(diskString string) []*types.LocalDisk {
 		resp = append(resp, &tmp)
 	}
 	return resp
-
-}
-
-// finds the disk uuid in the output of sgdisk
-func parseUUID(device, output string) (string, error) {
-
-	// find the line with the uuid
 
 }

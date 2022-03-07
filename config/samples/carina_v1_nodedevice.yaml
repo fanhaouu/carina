@@ -4,4 +4,4 @@ metadata:
   name: nodedevice-sample
 spec:
   # Add fields here
-  foo: bar
+  nodename: e2e-worker

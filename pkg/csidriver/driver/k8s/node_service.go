@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/rand"
 
+	carinav1 "github.com/carina-io/carina/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -40,8 +42,10 @@ const annAlphaSelectedNode = "volume.alpha.kubernetes.io/selected-node"
 
 type nodeService interface {
 	getNodes(ctx context.Context) (*corev1.NodeList, error)
+	getNodeDevices(ctx context.Context) (*carinav1.NodeDeviceList, error)
 	// SelectVolumeNode 支持 volume size 及 topology match
 	SelectVolumeNode(ctx context.Context, request int64, deviceGroup string, requirement *csi.TopologyRequirement) (string, string, map[string]string, error)
+	SelectNodeDevice(ctx context.Context, request int64, deviceGroup string, requirement *csi.TopologyRequirement,exclusivityDisk bool) (string, string, map[string]string, error)
 	GetCapacityByNodeName(ctx context.Context, nodeName, deviceGroup string) (int64, error)
 	GetTotalCapacity(ctx context.Context, deviceGroup string, topology *csi.Topology) (int64, error)
 	SelectDeviceGroup(ctx context.Context, request int64, nodeName string) (string, error)
@@ -160,6 +164,107 @@ func (s NodeService) SelectVolumeNode(ctx context.Context, requestGb int64, devi
 	}
 
 	return nodeName, selectDeviceGroup, segments, nil
+}
+
+//if raw divice select node and select free parttion space
+//裸盘情况下优先匹配有分区的，如果没有的话再匹配没有分区的裸盘
+func (s NodeService) SelectNodeDevice(ctx context.Context, requestGb int64, deviceGroup string, requirement *csi.TopologyRequirement,exclusivityDisk) (string, string, map[string]string, error) {
+	// 在并发场景下，兼顾调度效率与调度公平，将pv分配到不同时间段
+	time.Sleep(time.Duration(rand.Int63nRange(1, 30)) * time.Second)
+    if exclusivityDisk==nil || exclusivityDisk==""{
+		exclusivityDisk=false
+	}
+	var nodeName, selectDeviceGroup string
+	segments := map[string]string{}
+	type paris struct {
+		Key   string
+		Value int64
+	}
+	preselectNode := []paris{}
+	nodedevicelist, err := s.getNodeDevices(ctx)
+	if err != nil {
+		return "", "", segments, err
+	}
+	for _, nodedevice := range nodedevicelist.Items {
+        if nodedevice.Status.NodeState !=carinav1.Active{
+			continue
+		}
+		for key, value := range nodedevice.Status.Available {
+		if strings.Contains(key,"raw"){
+			continue
+		}
+		strings.Split(key,"")	
+		avaiableRaw,_ := strconv.ParseInt(value, 10, 64)
+		if  avaiableRaw < requestGb{
+			continue
+		}
+	    raw := 
+		//检查磁盘分区是否可用
+        for _, raw := range  nodedevice.Status.DeviceManage.RawDevices {
+			if raw.Name==
+		}
+		}
+		
+
+	
+		if exclusivityDisk ==true{
+        preselectNode = append(preselectNode, paris{Key: node.Name ,Value: avaiableRaw})
+		}	
+		
+	}
+
+	if len(preselectNode) < 1 {
+		return "", "", segments, ErrNodeNotFound
+	}
+
+	sort.Slice(preselectNode, func(i, j int) bool {
+		return preselectNode[i].Value < preselectNode[j].Value
+	})
+
+	// 根据配置文件中设置算法进行节点选择最小适配还是最大优选
+	if configuration.SchedulerStrategy() == configuration.SchedulerBinpack {
+     	nodeName = preselectNode[0].Key
+	} else if configuration.SchedulerStrategy() == configuration.Schedulerspreadout {
+        nodeName = preselectNode[len(preselectNode)-1].Key
+	} else {
+		return "", "", segments, errors.New(fmt.Sprintf("no support scheduler strategy %s", configuration.SchedulerStrategy()))
+	}
+
+
+
+	node := new(corev1.Node)
+	err := s.Get(ctx, client.ObjectKey{Name: nodeName}, node)
+	if err != nil {
+		log.Error(err, "unable get node ")
+		return "", "", segments, err
+	}
+	
+	// 获取选择节点的label
+	for _, topo := range requirement.GetRequisite() {
+		for k, _ := range topo.GetSegments() {
+			segments[k] = node.Labels[k]
+		}
+	}
+	
+	return nodeName, selectDeviceGroup, segments, nil
+}
+
+
+func (s NodeService) getPreselectNode(nodedevice carinav1.NodeDevice) (, error) {
+	nodeDeviceList := new(carinav1.NodeDeviceList)
+	err := s.List(ctx, nodeDeviceList)
+	if err != nil {
+		return nodeDeviceList, err
+	}
+	return nodeDeviceList, nil
+}
+func (s NodeService) getNodeDevices(ctx context.Context) (*carinav1.NodeDeviceList, error) {
+	nodeDeviceList := new(carinav1.NodeDeviceList)
+	err := s.List(ctx, nodeDeviceList)
+	if err != nil {
+		return nodeDeviceList, err
+	}
+	return nodeDeviceList, nil
 }
 
 // GetCapacityByNodeName returns VG capacity of specified node by name.

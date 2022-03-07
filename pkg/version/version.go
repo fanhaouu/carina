@@ -14,9 +14,9 @@ func GetDeviceGroup(diskType string) string {
 	currentDiskSelector := configuration.DiskSelector()
 	var diskClass = []string{}
 	for _, v := range currentDiskSelector {
-		if strings.ToLower(v.Policy) == "raw" {
-			continue
-		}
+		// if strings.ToLower(v.Policy) == "raw" {
+		// 	continue
+		// }
 		diskClass = append(diskClass, strings.ToLower(v.Name))
 	}
 	//diskClass := configuration.GetDiskGroups()
@@ -30,4 +30,20 @@ func GetDeviceGroup(diskType string) string {
 	}
 	return deviceGroup
 
+}
+
+func CheckRawDeviceGroup(diskType string) bool {
+	deviceGroup := strings.ToLower(diskType)
+	currentDiskSelector := configuration.DiskSelector()
+	if utils.ContainsString([]string{"ssd", "hdd"}, deviceGroup) {
+		deviceGroup = fmt.Sprintf("carina-vg-%s", deviceGroup)
+	}
+
+	for _, v := range currentDiskSelector {
+		if v.Name == deviceGroup && strings.ToLower(v.Policy) == "raw" {
+			return true
+		}
+
+	}
+	return false
 }

@@ -69,12 +69,6 @@ func subMain() error {
 		return err
 	}
 
-	// pre-cache objects
-	ctx := context.Background()
-	if _, err := mgr.GetCache().GetInformer(ctx, &corev1.Pod{}); err != nil {
-		return err
-	}
-
 	// 初始化磁盘管理服务
 	stopChan := make(chan struct{})
 	defer close(stopChan)
@@ -104,10 +98,31 @@ func subMain() error {
 		setupLog.Error(err, "unable to create controller", "controller", "LogicalVolume")
 		return err
 	}
+	//nodedevice
+	nodedeviceController := controllers.NodeDeviceReconciler{
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		NodeName:      nodeName,
+		DeviceManager: *dm,
+	}
 
+	if err := nodedeviceController.SetupWithManager(mgr, stopChan); err != nil {
+		setupLog.Error(err, "unable to create controller ", "controller", "nodeDeviceController")
+		return err
+	}
+
+	// pre-cache objects
+	ctx := context.Background()
+	if _, err := mgr.GetCache().GetInformer(ctx, &corev1.Pod{}); err != nil {
+		return err
+	}
 	if _, err := mgr.GetCache().GetInformer(ctx, &corev1.Node{}); err != nil {
 		return err
 	}
+	if _, err := mgr.GetCache().GetInformer(ctx, &corev1.PersistentVolume{}); err != nil {
+		return err
+	}
+
 	// +kubebuilder:scaffold:builder
 
 	// Add metrics exporter to manager.
