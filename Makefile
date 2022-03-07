@@ -99,3 +99,10 @@ else
 CONTROLLER_GEN=$(shell which controller-gen)
 endif
 
+kind-run:
+	skaffold  build --tag v0.9.1-47-g0255c46-dirty 
+	kind load docker-image registry.cn-hangzhou.aliyuncs.com/antmoveh/carina:v0.9.1-47-g0255c46-dirty --name e2e
+	skaffold  deploy  --tag v0.9.1-47-g0255c46-dirty 
+#	kubectl delete pods -l release=test-csi
+kind-rm:
+	skaffold  delete

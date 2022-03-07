@@ -54,6 +54,7 @@ func (s controllerService) CreateVolume(ctx context.Context, req *csi.CreateVolu
 	capabilities := req.GetVolumeCapabilities()
 	source := req.GetVolumeContentSource()
 	deviceGroup := req.GetParameters()[utils.DeviceDiskKey]
+	exclusivityDisk := req.GetParameters()[utils.ExclusivityDisk] == "true"
 	name := req.GetName()
 	if name == "" {
 		return nil, status.Error(codes.InvalidArgument, "invalid name")
@@ -117,6 +118,8 @@ func (s controllerService) CreateVolume(ctx context.Context, req *csi.CreateVolu
 
 	// process
 	var node string
+	var nodeName string
+	var group string
 	segments := map[string]string{}
 	requirements := req.GetAccessibilityRequirements()
 
@@ -156,10 +159,11 @@ func (s controllerService) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		log.Info("decide node because accessibility_requirements not found")
 		//检查磁盘类型是使用裸盘还是使用lvm
 		if version.CheckRawDeviceGroup(deviceGroup) {
-			exclusivityDisk := req.GetParameters()[utils.ExclusivityDisk]
-			nodeName, group, segmentsTmp, err := s.nodeService.SelectNodeDevice(ctx, requestGb, deviceGroup, requirements, exclusivityDisk)
+			nodeName, group, segments, err = s.nodeService.SelectNodeDevice(ctx, requestGb, deviceGroup, requirements, exclusivityDisk)
+		} else {
+			nodeName, group, segments, err = s.nodeService.SelectVolumeNode(ctx, requestGb, deviceGroup, requirements)
 		}
-		nodeName, group, segmentsTmp, err := s.nodeService.SelectVolumeNode(ctx, requestGb, deviceGroup, requirements)
+
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to get max capacity node %v", err)
 		}
@@ -169,12 +173,20 @@ func (s controllerService) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		if group == "" {
 			return nil, status.Error(codes.Internal, "can not find any device group")
 		}
-		node = nodeName
-		segments = segmentsTmp
-		deviceGroup = group
 	}
 
-	volumeID, deviceMajor, deviceMinor, err := s.lvService.CreateVolume(ctx, namespace, pvcName, node, deviceGroup, name, requestGb, metav1.OwnerReference{}, map[string]string{})
+	annotation := map[string]string{}
+	if version.CheckRawDeviceGroup(deviceGroup) {
+		annotation["carina.storage.io/"+nodeName+"-"+group] = "raw"
+	} else {
+		annotation["carina.storage.io/"+nodeName+"-"+group] = "lvm"
+	}
+	//if raw  add annotaion to logicVolume
+	if exclusivityDisk {
+		annotation["carina.storage.io/exclusivity-disk"] = "true"
+	}
+
+	volumeID, deviceMajor, deviceMinor, err := s.lvService.CreateVolume(ctx, namespace, pvcName, node, deviceGroup, name, requestGb, metav1.OwnerReference{}, annotation)
 	if err != nil {
 		_, ok := status.FromError(err)
 		if !ok {

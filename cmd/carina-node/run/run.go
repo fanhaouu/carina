@@ -110,9 +110,9 @@ func subMain() error {
 		setupLog.Error(err, "unable to create controller ", "controller", "nodeDeviceController")
 		return err
 	}
-
-	// pre-cache objects
 	ctx := context.Background()
+	//go wait.Until(nodedeviceController.CreateOrUpdateNodeDevice, time.Duration(120)*time.Second, stopChan)
+	// pre-cache objects
 	if _, err := mgr.GetCache().GetInformer(ctx, &corev1.Pod{}); err != nil {
 		return err
 	}

@@ -29,7 +29,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -58,7 +60,7 @@ type NodeDeviceReconciler struct {
 //+kubebuilder:rbac:groups=carina.storage.io,resources=nodedevices/status,verbs=get;update;patch
 
 func (r *NodeDeviceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log.Info("Start---------------------NodeDevice---------------------Reconciler")
+	log.Infof("nodeDevice %s reconcile manager...", req.Name)
 	globalConfigMap := configuration.DiskConfig.DiskSelectors
 	nodeName := os.Getenv("NODE_NAME")
 	node := new(corev1.Node)
@@ -88,8 +90,8 @@ func (r *NodeDeviceReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 	}
 	// your logic here
-	nodeDevice := new(carinav1.NodeDevice)
-	if err := r.Client.Get(ctx, req.NamespacedName, nodeDevice); err != nil {
+	nodeDevice := &carinav1.NodeDevice{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: req.Namespace, Name: nodeName}, nodeDevice); err != nil {
 		if !apierrs.IsNotFound(err) {
 			log.Error(err, "unable to fetch NodeDevice ")
 			return ctrl.Result{}, err
@@ -183,10 +185,10 @@ func (r *NodeDeviceReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 					size, _ := strconv.ParseInt(rawDevicesItem.Capacity, 10, 64)
 					capacity += size
-					tmpCapacity[utils.CapacityRaw] = fmt.Sprintf("%d", capacity)
+					tmpCapacity[utils.DeviceRaw+rawDevicesItem.Name] = fmt.Sprintf("%d", capacity)
 					avail, _ := strconv.ParseInt(rawDevicesItem.Available, 10, 64)
 					allocatable += avail
-					tmpAvalibel[utils.AvailableRaw] = fmt.Sprintf("%d", allocatable)
+					tmpAvalibel[utils.DeviceRaw+rawDevicesItem.Name] = fmt.Sprintf("%d", allocatable)
 					//add or update nodeDevice.Status.DeviceManage.RawDevices
 					tmpSlice := []string{}
 					for _, rawDevice := range nodeDevice.Status.DeviceManage.RawDevices {
@@ -238,12 +240,14 @@ func (r *NodeDeviceReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	return ctrl.Result{}, nil
 }
 
-func (r *NodeDeviceReconciler) CreateOrUpdateNodeDevice(ctx context.Context) error {
-	log.Info("Start---------------------NodeDevice---------------------CreateOrUpdateNodeDevice")
+func (r *NodeDeviceReconciler) CreateOrUpdateNodeDevice() {
+	log.Info("---------------------CreateOrUpdateNodeDevice---------------------")
 	nl := new(corev1.NodeList)
+	ctx := context.Background()
 	err := r.Client.List(ctx, nl)
 	if err != nil {
-		return err
+		log.Errorf("get node  list err %s", err)
+		return
 	}
 	globalConfigMap := configuration.DiskConfig.DiskSelectors
 	for _, node := range nl.Items {
@@ -280,21 +284,41 @@ func (r *NodeDeviceReconciler) CreateOrUpdateNodeDevice(ctx context.Context) err
 				log.Infof("get node  name: %s ,type: %s,status: %s", node.Name, s.Type, s.Status)
 			}
 		}
-		log.Info("---------------------new(carinav1.NodeDevice)--------------------")
+
 		//create nodedevice
 		nodeDevice := new(carinav1.NodeDevice)
 		if err := r.Client.Get(ctx, client.ObjectKey{Name: node.Name}, nodeDevice); err != nil {
 			if apierrs.IsNotFound(err) {
 				log.Error(err, "unable to fetch NodeDevice ")
-				nodeDevice.ObjectMeta.Annotations = node.Annotations
-				nodeDevice.ObjectMeta.Labels = node.Labels
-				nodeDevice.ObjectMeta.Name = node.Name
-				nodeDevice.Spec.NodeName = node.Name
-				nodeDevice.Spec.DiskSelector = DiskSelector
-				nodeDevice.Status.NodeState = nodeStatus
-				nodeDevice.Finalizers = append(nodeDevice.Finalizers, utils.NodeDeviceFinalizer)
+				nodeDevice := &carinav1.NodeDevice{
+					TypeMeta: metav1.TypeMeta{
+						Kind:       "NodeDevice",
+						APIVersion: "carina.storage.io/v1",
+					},
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        node.Name,
+						Namespace:   configuration.RuntimeNamespace(),
+						Labels:      node.Labels,
+						Annotations: node.Annotations,
+						OwnerReferences: []metav1.OwnerReference{
+							{
+								APIVersion: "",
+								Kind:       "CSIDriver",
+								Name:       "csi-carina-com",
+							},
+						},
+					},
+					Spec: carinav1.NodeDeviceSpec{
+						NodeName:     node.Name,
+						DiskSelector: DiskSelector,
+					},
+				}
+
 				log.Info("create nodedevice name" + node.Name)
-				return r.Client.Create(ctx, nodeDevice)
+				if err = r.Client.Create(ctx, nodeDevice); err != nil {
+					log.Error(err, "unable to create NodeDevice ", nodeDevice.Name)
+				}
+
 			}
 		}
 		//update nodedevice
@@ -304,21 +328,17 @@ func (r *NodeDeviceReconciler) CreateOrUpdateNodeDevice(ctx context.Context) err
 		}
 	}
 
-	return nil
 }
 
 func (r *NodeDeviceReconciler) SetupWithManager(mgr ctrl.Manager, stopChan <-chan struct{}) error {
-	if err := r.CreateOrUpdateNodeDevice(context.Background()); err != nil {
-		return err
-	}
 
-	ticker := time.NewTicker(600 * time.Second)
+	ticker := time.NewTicker(60 * time.Second)
 	go func(t *time.Ticker) {
 		defer ticker.Stop()
 		for {
 			select {
 			case <-t.C:
-				_ = r.CreateOrUpdateNodeDevice(context.Background())
+				r.CreateOrUpdateNodeDevice()
 			case <-stopChan:
 				log.Info("stop node reconcile...")
 				return

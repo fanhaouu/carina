@@ -41,7 +41,7 @@ serviceAccount:
   node: carina-csi-node 
 
 driver:
-  name: csi.carina.com
+  name: csi-carina-com
 
 rbac:
   create: true
