@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"github.com/carina-io/carina/pkg/notify"
 	"strconv"
 	"time"
 
@@ -161,7 +162,7 @@ func (r *LogicVolumeReconciler) removeLVIfExists(ctx context.Context, lv *carina
 		return fmt.Errorf("Create with no support type ")
 	}
 
-	r.volume.NoticeUpdateCapacity([]string{lv.Spec.DeviceGroup})
+	notify.SendEvent(notify.LogicVolumeController)
 	log.Info("LV already removed name ", lv.Name, " uid ", lv.UID)
 	return nil
 }
@@ -257,8 +258,8 @@ func (r *LogicVolumeReconciler) createLV(ctx context.Context, lv *carinav1.Logic
 		return err
 	}
 
-	r.volume.NoticeUpdateCapacity([]string{lv.Spec.DeviceGroup})
-	log.Info("created new LV name ", lv.Name, " uid ", lv.UID, " status.volumeID ", lv.Status.VolumeID)
+	notify.SendEvent(notify.LogicVolumeController)
+	log.Info("Created new LV name ", lv.Name, " uid ", lv.UID, " status.volumeID ", lv.Status.VolumeID)
 	return nil
 }
 
@@ -343,8 +344,8 @@ func (r *LogicVolumeReconciler) expandLV(ctx context.Context, lv *carinav1.Logic
 		return err
 	}
 
-	r.volume.NoticeUpdateCapacity([]string{lv.Spec.DeviceGroup})
-	log.Info("expanded LV name ", lv.Name, " uid ", lv.UID, " status.volumeID ", lv.Status.VolumeID,
+	notify.SendEvent(notify.LogicVolumeController)
+	log.Info("Expanded LV name ", lv.Name, " uid ", lv.UID, " status.volumeID ", lv.Status.VolumeID,
 		" original status.currentSize ", origBytes, " status.currentSize ", reqBytes)
 	return nil
 }

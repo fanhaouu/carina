@@ -451,7 +451,7 @@ func (v *LocalVolumeImplement) RemoveDiskInVg(disk, vgName string) error {
 			}
 		} else {
 			// 移除该Pv,剩余空间不足，则不允许移除
-			if vgInfo.VGSize-vgInfo.VGFree > pvInfo.PVSize {
+			if vgInfo.VGSize-vgInfo.VGFree < pvInfo.PVSize {
 				log.Warnf("cannot remove the disk %s because there will not enough space", disk)
 				return errors.New("not enough space")
 			}
@@ -501,40 +501,6 @@ func (v *LocalVolumeImplement) RefreshLvmCache() {
 		log.Warnf("error during vgscan: %v", err)
 	}
 
-}
-
-func (v *LocalVolumeImplement) NoticeUpdateCapacity(vgName []string) {
-
-	// 如果更新不成功，chan会一直阻塞，10s无法更新完成则输出超时日志
-
-	c1 := make(chan byte, 1)
-	go func() {
-		defer func() {
-			if err := recover(); err != nil {
-				log.Errorf("send notice server %s panic", strings.Join(vgName, " "))
-			}
-		}()
-		for k, c := range v.NoticeServerMap {
-			if len(vgName) == 0 {
-				c <- struct{}{}
-			} else if utils.ContainsString(vgName, k) {
-				c <- struct{}{}
-			}
-		}
-		c1 <- 1
-	}()
-	select {
-	case <-c1:
-		log.Info("send all update channel done.")
-		return
-	case <-time.After(10 * time.Second):
-		log.Warn("send all update channel timeout.")
-		return
-	}
-}
-
-func (v *LocalVolumeImplement) RegisterNoticeServer(vgName string, notice chan struct{}) {
-	v.NoticeServerMap[vgName] = notice
 }
 
 // CreateBcache bcache
@@ -598,4 +564,8 @@ func (v *LocalVolumeImplement) BcacheDeviceInfo(dev string) (*types.BcacheDevice
 	bcacheInfo.BcachePath = deviceInfo.BcachePath
 
 	return bcacheInfo, nil
+}
+
+func (v *LocalVolumeImplement) GetLv() lvmd.Lvm2 {
+	return v.Lv
 }
