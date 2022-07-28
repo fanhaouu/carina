@@ -24,7 +24,6 @@ import (
 	"github.com/carina-io/carina/pkg/devicemanager/partition"
 	"github.com/carina-io/carina/pkg/devicemanager/types"
 	"github.com/carina-io/carina/pkg/devicemanager/volume"
-	"github.com/carina-io/carina/pkg/notify"
 	"github.com/carina-io/carina/utils"
 	"github.com/carina-io/carina/utils/log"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -123,7 +122,7 @@ func (t *Trouble) CleanupOrphanVolume() {
 	}
 
 	if deleteVolume {
-		notify.SendEvent(notify.CleanupOrphan)
+		t.volumeManager.NoticeUpdateCapacity(volume.CleanupOrphan)
 	}
 
 	log.Infof("%s volume check finished.", logPrefix)
@@ -189,7 +188,7 @@ func (t *Trouble) CleanupOrphanPartition() {
 		}
 	}
 	if deletePartion {
-		notify.SendEvent(notify.CleanupOrphan)
+		t.volumeManager.NoticeUpdateCapacity(volume.CleanupOrphan)
 	}
 	log.Infof("%s volume check finished.", logPrefix)
 }

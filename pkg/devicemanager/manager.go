@@ -19,7 +19,6 @@ package deviceManager
 import (
 	"context"
 	"github.com/carina-io/carina/pkg/devicemanager/bcache"
-	"github.com/carina-io/carina/pkg/notify"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"regexp"
 	"strings"
@@ -67,7 +66,7 @@ func NewDeviceManager(nodeName string, cache cache.Cache, stopChan <-chan struct
 		cache:            cache,
 		Executor:         executor,
 		Mutex:            mutex,
-		VolumeManager:    &volume.LocalVolumeImplement{Mutex: mutex, Lv: &lvmd.Lvm2Implement{Executor: executor}, Bcache: &bcache.BcacheImplement{Executor: executor}, NoticeServerMap: make(map[string]chan struct{})},
+		VolumeManager:    &volume.LocalVolumeImplement{Mutex: mutex, Lv: &lvmd.Lvm2Implement{Executor: executor}, Bcache: &bcache.BcacheImplement{Executor: executor}, NoticeUpdate: make(chan volume.VolumeEvent)},
 		Partition:        &partition.LocalPartitionImplement{Mutex: mutex, CacheParttionNum: make(map[string]uint), Executor: executor},
 		stopChan:         stopChan,
 		nodeName:         nodeName,
@@ -210,7 +209,7 @@ func (dm *DeviceManager) addAndRemoveDevice() {
 	}
 	log.Debug("new vgs ", changeAfter)
 	if !equality.Semantic.DeepEqual(changeBefore, changeAfter) {
-		notify.SendEvent(notify.LVMCheck)
+		dm.VolumeManager.NoticeUpdateCapacity(volume.LVMCheck)
 	}
 }
 
@@ -403,11 +402,11 @@ func (dm *DeviceManager) DeviceCheckTask() {
 				log.Infof("clock %d second device scan...", configuration.DiskScanInterval())
 				dm.addAndRemoveDevice()
 				// here for raw storage update, reuse the scan ticker
-				notify.SendEvent(notify.Dummy)
+				dm.VolumeManager.NoticeUpdateCapacity(volume.Dummy)
 			case <-dm.configModifyChan:
 				log.Info("config modify trigger disk scan...")
 				dm.addAndRemoveDevice()
-				notify.SendEvent(notify.ConfigModify)
+				go time.AfterFunc(10*time.Second, func() { dm.VolumeManager.NoticeUpdateCapacity(volume.ConfigModify) })
 			case <-dm.stopChan:
 				log.Info("stop device scan...")
 				return

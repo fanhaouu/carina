@@ -20,9 +20,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/anuvu/disko"
-	"github.com/carina-io/carina/pkg/notify"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
+	"github.com/carina-io/carina/pkg/devicemanager/volume"
 	"regexp"
 	"sort"
 	"strings"
@@ -47,9 +45,10 @@ const (
 // NodeStorageResourceReconciler reconciles a NodeStorageResource object
 type NodeStorageResourceReconciler struct {
 	client.Client
-	nodeName string
-	stopChan <-chan struct{}
-	dm       *deviceManager.DeviceManager
+	nodeName      string
+	updateChannel chan volume.VolumeEvent
+	stopChan      <-chan struct{}
+	dm            *deviceManager.DeviceManager
 }
 
 func NewNodeStorageResourceReconciler(
@@ -59,14 +58,15 @@ func NewNodeStorageResourceReconciler(
 	dm *deviceManager.DeviceManager,
 ) *NodeStorageResourceReconciler {
 	return &NodeStorageResourceReconciler{
-		Client:   client,
-		nodeName: nodeName,
-		stopChan: stopChan,
-		dm:       dm,
+		Client:        client,
+		nodeName:      nodeName,
+		updateChannel: make(chan volume.VolumeEvent, 1000), // Buffer up to 1000 statuses
+		stopChan:      stopChan,
+		dm:            dm,
 	}
 }
 
-func (r *NodeStorageResourceReconciler) reconcile(ve *notify.VolumeEvents) error {
+func (r *NodeStorageResourceReconciler) reconcile(ve volume.VolumeEvent) {
 	log.Infof("Try to update nodeStorageResource, trigger: %s, trigger at: %v", ve.Trigger, ve.TriggerAt.Format("2006-01-02 15:04:05.000000000"))
 
 	nodeStorageResource := new(carinav1beta1.NodeStorageResource)
@@ -79,7 +79,6 @@ func (r *NodeStorageResourceReconciler) reconcile(ve *notify.VolumeEvents) error
 				log.Error(err, "unable to create NodeStorageResource ", r.nodeName)
 			}
 		}
-		return getErr
 	}
 
 	nsr := nodeStorageResource.DeepCopy()
@@ -92,62 +91,35 @@ func (r *NodeStorageResourceReconciler) reconcile(ve *notify.VolumeEvents) error
 		nsr.Status.SyncTime = metav1.Now()
 		if err := r.Client.Status().Update(ctx, nsr); err != nil {
 			log.Error(err, " failed to update nodeStorageResource status name ", nsr.Name)
-			return err
 		}
 	}
-	return nil
 }
 
 // Run begins watching and syncing.
 func (r *NodeStorageResourceReconciler) Run() {
-	defer notify.GetQueue().ShutDown()
-
 	log.Infof("Starting nodeStorageResource reconciler")
 	defer log.Infof("Shutting down nodeStorageResource reconciler")
 
-	for i := 0; i < WorkersCount; i++ {
-		go wait.Until(r.worker, time.Second, r.stopChan)
+	// register volume update notice chan
+	r.dm.VolumeManager.RegisterNoticeChan(r.updateChannel)
+
+	// for startup
+	r.triggerReconcile()
+
+	for {
+		select {
+		case event := <-r.updateChannel:
+			r.reconcile(event)
+		case <-r.stopChan:
+			_ = r.deleteNodeStorageResource(context.TODO())
+			log.Info("Delete nodestorageresource...")
+			return
+		}
 	}
-
-	<-r.stopChan
-	log.Info("Delete nodestorageresource...")
-	_ = r.deleteNodeStorageResource(context.TODO())
-
 }
 
-func (r *NodeStorageResourceReconciler) worker() {
-	for r.processNextWorkItem() {
-	}
-}
-
-func (r *NodeStorageResourceReconciler) processNextWorkItem() bool {
-	key, quit := notify.GetQueue().Get()
-	if quit {
-		return false
-	}
-	defer notify.GetQueue().Done(key)
-
-	err := r.reconcile(key.(*notify.VolumeEvents))
-	r.handleErr(err, key)
-
-	return true
-}
-
-func (r *NodeStorageResourceReconciler) handleErr(err error, key interface{}) {
-	if err == nil {
-		notify.GetQueue().Forget(key)
-		return
-	}
-
-	if notify.GetQueue().NumRequeues(key) < 15 {
-		log.Info("Error syncing nodeStorageResource: %s", err.Error())
-		notify.GetQueue().AddRateLimited(key)
-		return
-	}
-
-	utilruntime.HandleError(err)
-	log.Infof("Dropping nodeStorageResource %q out of the queue: %v", key, err)
-	notify.GetQueue().Forget(key)
+func (r *NodeStorageResourceReconciler) triggerReconcile() {
+	r.updateChannel <- volume.VolumeEvent{Trigger: volume.Dummy, TriggerAt: time.Now()}
 }
 
 func (r *NodeStorageResourceReconciler) createNodeStorageResource(ctx context.Context) error {
