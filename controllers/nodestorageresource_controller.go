@@ -51,8 +51,7 @@ func NewNodeStorageResourceReconciler(
 	client client.Client,
 	nodeName string,
 	stopChan <-chan struct{},
-	dm *deviceManager.DeviceManager,
-) *NodeStorageResourceReconciler {
+	dm *deviceManager.DeviceManager) *NodeStorageResourceReconciler {
 	return &NodeStorageResourceReconciler{
 		Client:        client,
 		nodeName:      nodeName,
