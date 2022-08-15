@@ -52,33 +52,25 @@ func (lv2 *Lvm2Implement) PVResize(dev string) error {
 // PVS 示例输出
 // pvs --noheadings --separator=, --units=b --nosuffix --unbuffered --nameprefixes
 // LVM2_PV_NAME='/dev/loop2',LVM2_VG_NAME='lvmvg',LVM2_PV_FMT='lvm2',LVM2_PV_ATTR='a--',LVM2_PV_SIZE='16101933056',LVM2_PV_FREE='16101933056'
-func (lv2 *Lvm2Implement) PVS() ([]api.PVInfo, error) {
-
+func (lv2 *Lvm2Implement) PVS(vg string) ([]api.PVInfo, error) {
 	args := []string{"--noheadings", "--separator=,", "--units=b", "--nosuffix", "--unbuffered", "--nameprefixes"}
 
-	pvsInfo, err := lv2.Executor.ExecuteCommandWithOutput("pvs", args...)
+	var pvsInfo string
+	var err error
+	if vg == "" {
+		pvsInfo, err = lv2.Executor.ExecuteCommandWithOutput("pvs", args...)
+	} else {
+		pvsInfo, err = lv2.Executor.ExecuteCommandWithOutputAndGrep("pvs", vg, args...)
+	}
+
 	if err != nil {
 		return nil, err
 	}
 	return parsePvs(pvsInfo), nil
 }
 
-// PVDisplay
-/*
-# pvdisplay /dev/loop4
-  --- Physical volume ---
-  PV Name               /dev/loop4
-  VG Name               v1
-  PV Size               15.00 GiB / not usable 4.00 MiB
-  Allocatable           yes
-  PE Size               4.00 MiB
-  Total PE              3839
-  Free PE               3839
-  Allocated PE          0
-  PV UUID               OiNoxD-Y1sw-FSzi-mqPN-07EW-C77P-TNdtc6
-*/
 func (lv2 *Lvm2Implement) PVDisplay(dev string) (*api.PVInfo, error) {
-	pvsInfo, err := lv2.PVS()
+	pvsInfo, err := lv2.PVS("")
 	if err != nil {
 		return nil, err
 	}

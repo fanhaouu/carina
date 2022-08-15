@@ -207,7 +207,6 @@ func (v *LocalVolumeImplement) VolumeInfo(lvName, vgName string) (*types.LvInfo,
 }
 
 func (v *LocalVolumeImplement) GetCurrentVgStruct() ([]api.VgGroup, error) {
-
 	resp := []api.VgGroup{}
 	tmp := map[string]*api.VgGroup{}
 
@@ -215,6 +214,9 @@ func (v *LocalVolumeImplement) GetCurrentVgStruct() ([]api.VgGroup, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(vgs) == 0 {
+	}
+
 	for i, v := range vgs {
 		tmp[v.VGName] = &vgs[i]
 	}
@@ -224,10 +226,8 @@ func (v *LocalVolumeImplement) GetCurrentVgStruct() ([]api.VgGroup, error) {
 	if err != nil {
 		return nil, err
 	}
-	for i, v := range pvs {
-		if v.VGName == "" {
-			continue
-		}
+
+	for vgName, vg := range tmp {}
 		if tmp[v.VGName] != nil {
 			tmp[v.VGName].PVS = append(tmp[v.VGName].PVS, &pvs[i])
 		}

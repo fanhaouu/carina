@@ -36,6 +36,7 @@ type Executor interface {
 	ExecuteCommand(command string, arg ...string) error
 	ExecuteCommandWithEnv(env []string, command string, arg ...string) error
 	ExecuteCommandWithOutput(command string, arg ...string) (string, error)
+	ExecuteCommandWithOutputAndGrep(command string, grepStr string, arg ...string) (string, error)
 	ExecuteCommandWithCombinedOutput(command string, arg ...string) (string, error)
 	ExecuteCommandWithOutputFile(command, outfileArg string, arg ...string) (string, error)
 	ExecuteCommandWithOutputFileTimeout(timeout time.Duration, command, outfileArg string, arg ...string) (string, error)
@@ -127,6 +128,14 @@ func (*CommandExecutor) ExecuteCommandWithOutput(command string, arg ...string) 
 	// #nosec G204 Rook controls the input to the exec arguments
 	cmd := exec.Command(command, arg...)
 	return runCommandWithOutput(cmd, false)
+}
+
+// ExecuteCommandWithCombinedOutput executes a command with output, then grep str
+func (*CommandExecutor) ExecuteCommandWithOutputAndGrep(command string, grepStr string, arg ...string) (string, error) {
+	logCommand(command, arg...)
+	// #nosec G204 Rook controls the input to the exec arguments
+	cmd := exec.Command(command, arg...)
+	return runCommandWithOutputAndGrep(cmd, false, grepStr)
 }
 
 // ExecuteCommandWithCombinedOutput executes a command with combined output
@@ -285,6 +294,39 @@ func runCommandWithOutput(cmd *exec.Cmd, combinedOutput bool) (string, error) {
 		output, err = cmd.CombinedOutput()
 	} else {
 		output, err = cmd.Output()
+		if err != nil {
+			output = []byte(fmt.Sprintf("%s. %s", string(output), assertErrorType(err)))
+		}
+	}
+
+	out = strings.TrimSpace(string(output))
+
+	if err != nil {
+		return out, err
+	}
+
+	return out, nil
+}
+
+func runCommandWithOutputAndGrep(cmd *exec.Cmd, combinedOutput bool, grepStr string) (string, error) {
+	var output []byte
+	var err error
+	var out string
+
+	grep := exec.Command("grep", grepStr)
+	// Get cmd's stdout and attach it to grep's stdin
+	cmdPipe, _ := cmd.StdoutPipe()
+	defer cmdPipe.Close()
+	grep.Stdin = cmdPipe
+	// Run cmd first
+	if err = cmd.Start(); err != nil {
+		return out, err
+	}
+
+	if combinedOutput {
+		output, err = grep.CombinedOutput()
+	} else {
+		output, err = grep.Output()
 		if err != nil {
 			output = []byte(fmt.Sprintf("%s. %s", string(output), assertErrorType(err)))
 		}

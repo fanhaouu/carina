@@ -28,7 +28,7 @@ type Lvm2 interface {
 	PVRemove(dev string) error
 	PVResize(dev string) error
 	// PVS 列出pv列表
-	PVS() ([]api.PVInfo, error)
+	PVS(vg string) ([]api.PVInfo, error)
 	// PVScan 扫描pv加入cache,在服务启动时执行
 	PVScan(dev string) error
 	PVDisplay(dev string) (*api.PVInfo, error)
