@@ -14,7 +14,6 @@ type VgGroup struct {
 // PVInfo defines pv details
 type PVInfo struct {
 	PVName string `json:"pvName,omitempty"`
-	VGName string `json:"vgName,omitempty"`
 	PVFmt  string `json:"pvFmt,omitempty"`
 	PVAttr string `json:"pvAttr,omitempty"`
 	PVSize uint64 `json:"pvSize,omitempty"`
