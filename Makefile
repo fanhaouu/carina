@@ -76,14 +76,14 @@ build:
 	docker build -t $(IMAGE_REPOSITORY)/local-storage-csi:$(VERSION) .
 	rm -rf vendor
 
-build-deploy:
-	docker build -t $(IMAGE_REPOSITORY)/local-storage-csi-deploy:$(VERSION) .deploy
+build-manifests:
+	docker build -t $(IMAGE_REPOSITORY)/local-storage-csi-manifests:$(VERSION) .deploy
 
 # Push the docker image
 push: build
 	docker push $(IMAGE_REPOSITORY)/local-storage-csi:$(VERSION)
 
-push-deploy: build-deploy
+push-manifests: build-manifests
 	docker push $(IMAGE_REPOSITORY)/local-storage-csi-manifests:$(VERSION)
 
 # find or download controller-gen
