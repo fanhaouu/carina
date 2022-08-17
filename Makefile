@@ -71,17 +71,20 @@ generate: controller-gen
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 # Build the docker image
-docker-build:
+build:
 	go mod vendor
 	docker build -t $(IMAGE_REPOSITORY)/local-storage-csi:$(VERSION) .
 	rm -rf vendor
-	docker push $(IMAGE_REPOSITORY)/local-storage-csi:$(VERSION)
+
+build-deploy:
+	docker build -t $(IMAGE_REPOSITORY)/local-storage-csi-deploy:$(VERSION) .deploy
 
 # Push the docker image
-release:
-	go mod vendor
-	docker buildx build -t $(IMAGE_REPOSITORY)/local-storage-csi:$(VERSION) --platform=$(ARCH) . --push
-	rm -rf vendor
+push: build
+	docker push $(IMAGE_REPOSITORY)/local-storage-csi:$(VERSION)
+
+push-deploy: build-deploy
+	docker push $(IMAGE_REPOSITORY)/local-storage-csi-manifests:$(VERSION)
 
 # find or download controller-gen
 # download controller-gen if necessary
