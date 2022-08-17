@@ -10,7 +10,7 @@ spec:
   selector:
     matchLabels:
       app: csi-carina-provisioner
-  replicas: 1
+  replicas: 3
   template:
     metadata:
       labels:
@@ -19,7 +19,7 @@ spec:
       serviceAccount: carina-csi-controller
       containers:
         - name: csi-provisioner
-          image: registry.cn-hangzhou.aliyuncs.com/antmoveh/csi-provisioner:v2.1.0
+          image: k8s.gcr.io/sig-storage/csi-provisioner:v3.2.1
           args:
             - "--csi-address=$(ADDRESS)"
             - "--v=5"
@@ -28,6 +28,7 @@ spec:
             - "--retry-interval-start=500ms"
             - "--feature-gates=Topology=true"
             - "--extra-create-metadata=true"
+            -  "--strict-topology=true"
           env:
             - name: ADDRESS
               value: unix:///csi/csi-provisioner.sock
@@ -36,7 +37,7 @@ spec:
             - name: socket-dir
               mountPath: /csi
         - name: csi-resizer
-          image: registry.cn-hangzhou.aliyuncs.com/antmoveh/csi-resizer:v1.1.0
+          image: k8s.gcr.io/sig-storage/csi-resizer:v1.5.0
           args:
             - "--csi-address=$(ADDRESS)"
             - "--v=5"
