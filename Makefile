@@ -12,8 +12,8 @@ IMG ?= carina:raw
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true"
 
-IMAGE_REPOSITORY=registry.cn-hangzhou.aliyuncs.com/antmoveh
-VERSION ?= latest
+IMAGE_REPOSITORY=harbor.shopeemobile.com/ecp
+VERSION ?= 1.0
 
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -73,14 +73,14 @@ generate: controller-gen
 # Build the docker image
 docker-build:
 	go mod vendor
-	docker build -t $(IMAGE_REPOSITORY)/carina:$(VERSION) .
+	docker build -t $(IMAGE_REPOSITORY)/local-storage-csi:$(VERSION) .
 	rm -rf vendor
-	docker push $(IMAGE_REPOSITORY)/carina:$(VERSION)
+	docker push $(IMAGE_REPOSITORY)/local-storage-csi:$(VERSION)
 
 # Push the docker image
 release:
 	go mod vendor
-	docker buildx build -t $(IMAGE_REPOSITORY)/carina:$(VERSION) --platform=$(ARCH) . --push
+	docker buildx build -t $(IMAGE_REPOSITORY)/local-storage-csi:$(VERSION) --platform=$(ARCH) . --push
 	rm -rf vendor
 
 # find or download controller-gen
