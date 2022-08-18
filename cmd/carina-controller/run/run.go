@@ -29,7 +29,6 @@ import (
 
 	carinav1 "github.com/carina-io/carina/api/v1"
 	carinav1beta1 "github.com/carina-io/carina/api/v1beta1"
-	"github.com/carina-io/carina/controllers"
 	"github.com/carina-io/carina/hook"
 	"github.com/carina-io/carina/pkg/configuration"
 	"github.com/carina-io/carina/pkg/csidriver/driver"
@@ -99,19 +98,6 @@ func subMain() error {
 	dec, _ := admission.NewDecoder(scheme)
 	wh := mgr.GetWebhookServer()
 	wh.Register("/pod/mutate", hook.PodMutator(mgr.GetClient(), dec))
-	//wh.Register("/pvc/mutate", hook.PVCMutator(mgr.GetClient(), dec))
-
-	ctx := ctrl.SetupSignalHandler()
-
-	// register controllers
-	nodecontroller := &controllers.NodeReconciler{
-		Client:   mgr.GetClient(),
-		StopChan: ctx.Done(),
-	}
-	if err := nodecontroller.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Node")
-		return err
-	}
 
 	//+kubebuilder:scaffold:builder
 
@@ -140,7 +126,7 @@ func subMain() error {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctx); err != nil {
+	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		return err
 	}
