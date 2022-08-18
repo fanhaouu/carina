@@ -22,7 +22,7 @@ spec:
         - name: init-container
           securityContext:
             privileged: true
-          image: registry.cn-hangzhou.aliyuncs.com/antmoveh/busybox:1.28
+          image: harbor.shopeemobile.com/ecp/busybox:1.28
           command: ["sh", "-c"]
           # args: ["for i in dm_snapshot dm_mirror dm_thin_pool bcache; do modprobe $i; done"]
           args: ["for i in dm_snapshot dm_mirror dm_thin_pool; do modprobe $i; done"]
@@ -36,7 +36,7 @@ spec:
           # created by privileged CSI driver container.
           securityContext:
             privileged: true
-          image: k8s.gcr.io/sig-storage/csi-node-driver-registrar:v2.5.1
+          image: harbor.shopeemobile.com/ecp/csi-node-driver-registrar:v2.5.1
           args:
             - "--v=5"
             - "--csi-address=/csi/csi.sock"
@@ -58,7 +58,7 @@ spec:
               add: ["SYS_ADMIN"]
             allowPrivilegeEscalation: true
           # for stable functionality replace canary with latest release version
-          image: registry.cn-hangzhou.aliyuncs.com/antmoveh/carina:latest
+          image: harbor.shopeemobile.com/ecp/local-storage-csi:1.0
           command: ["carina-node"]
           args:
             - "--csi-address=$(ADDRESS)"

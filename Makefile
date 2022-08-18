@@ -5,7 +5,7 @@ KUBEBUILDER_VERSION = 3.2.1
 KUSTOMIZE_VERSION= 3.8.9
 PROTOC_VERSION=3.15.0
 DATE=$(shell date '+%Y%m%d%H%M%S')
-ARCH ?= linux/arm64,linux/amd64
+ARCH ?= linux/amd64
 
 # Image URL to use all building/pushing image targets
 IMG ?= carina:raw
@@ -73,11 +73,11 @@ generate: controller-gen
 # Build the docker image
 build:
 	go mod vendor
-	docker build -t $(IMAGE_REPOSITORY)/local-storage-csi:$(VERSION) .
+	docker build -t $(IMAGE_REPOSITORY)/local-storage-csi:$(VERSION) --platform=$(ARCH) .
 	rm -rf vendor
 
 build-manifests:
-	docker build -t $(IMAGE_REPOSITORY)/local-storage-csi-manifests:$(VERSION) .deploy
+	docker build -t $(IMAGE_REPOSITORY)/local-storage-csi-manifests:$(VERSION) --platform=$(ARCH) ./deploy
 
 # Push the docker image
 push: build

@@ -19,7 +19,7 @@ spec:
       serviceAccount: carina-csi-controller
       containers:
         - name: csi-provisioner
-          image: k8s.gcr.io/sig-storage/csi-provisioner:v3.2.1
+          image: harbor.shopeemobile.com/ecp/csi-provisioner:v3.2.1
           args:
             - "--csi-address=$(ADDRESS)"
             - "--v=5"
@@ -33,11 +33,18 @@ spec:
             - name: ADDRESS
               value: unix:///csi/csi-provisioner.sock
           imagePullPolicy: "IfNotPresent"
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
           volumeMounts:
             - name: socket-dir
               mountPath: /csi
         - name: csi-resizer
-          image: k8s.gcr.io/sig-storage/csi-resizer:v1.5.0
+          image: harbor.shopeemobile.com/ecp/csi-resizer:v1.5.0
           args:
             - "--csi-address=$(ADDRESS)"
             - "--v=5"
@@ -49,6 +56,13 @@ spec:
             - name: ADDRESS
               value: unix:///csi/csi-provisioner.sock
           imagePullPolicy: "IfNotPresent"
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
           volumeMounts:
             - name: socket-dir
               mountPath: /csi
@@ -58,7 +72,7 @@ spec:
             capabilities:
               add: ["SYS_ADMIN"]
           # for stable functionality replace canary with latest release version
-          image: registry.cn-hangzhou.aliyuncs.com/antmoveh/carina:latest
+          image: harbor.shopeemobile.com/ecp/local-storage-csi:1.0
           command: ["carina-controller"]
           args:
             - "--csi-address=$(ADDRESS)"
@@ -179,7 +193,7 @@ spec:
     spec:
       containers:
         - name: create
-          image: registry.cn-hangzhou.aliyuncs.com/antmoveh/kube-webhook-certgen:v1.1.1
+          image: harbor.shopeemobile.com/ecp/kube-webhook-certgen:v1.1.1
           imagePullPolicy: IfNotPresent
           args:
             - create
@@ -213,7 +227,7 @@ spec:
     spec:
       containers:
         - name: patch
-          image: registry.cn-hangzhou.aliyuncs.com/antmoveh/kube-webhook-certgen:v1.1.1
+          image: harbor.shopeemobile.com/ecp/kube-webhook-certgen:v1.1.1
           imagePullPolicy: IfNotPresent
           args:
             - patch
